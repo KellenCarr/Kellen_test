@@ -1,0 +1,19 @@
+# Data files — this is a public repo; keep datasets out of it
+*.csv
+*.xlsx
+*.xls
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Secrets — never commit these
+.env
+.env.*
+*.pem
+*.key
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
