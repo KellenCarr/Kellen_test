@@ -1,0 +1,33 @@
+# Keeps requirements.txt current automatically.
+#
+# This file configures *version updates* (scheduled bumps). Dependabot
+# *security updates* — the alerts that fire when an advisory is published —
+# are toggled separately under Settings > Code security, and are worth
+# enabling alongside this so fixes are raised without waiting for Monday.
+version: 2
+
+updates:
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "America/Los_Angeles"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "deps"
+    groups:
+      # requirements.txt pins the full transitive closure (~48 packages), so
+      # ungrouped updates would open a PR per package. Roll routine bumps
+      # into one PR instead.
+      all-dependencies:
+        applies-to: version-updates
+        patterns:
+          - "*"
+      # Keep advisory-driven fixes in their own PR so they stay easy to
+      # review and merge quickly, rather than riding along with routine bumps.
+      security-updates:
+        applies-to: security-updates
+        patterns:
+          - "*"
