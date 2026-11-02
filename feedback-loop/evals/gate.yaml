@@ -1,0 +1,27 @@
+# Eval gate for any change to the triage prompt, model, effort, taxonomy or checks.
+# `loop eval --split frozen --gate-enforce` fails when any rule below fails.
+#
+# These numbers are starting points, not measurements. Before relying on the gate:
+#   1. Run the frozen eval twice on unchanged code. The gap between the two runs is the noise floor.
+#   2. Set regression.tolerance above that gap, or the gate will fail on noise.
+#   3. Set the floors from the first accepted run, and record why in the commit message.
+# Tighten freely; loosen only with a written reason in the commit.
+
+min_cases: 30          # fewer frozen cases than this and the numbers mean little
+
+floors:
+  blocked_recall: 0.90       # a missed blocked user is the costliest error (the prompt leans toward flagging)
+  evidence_valid_rate: 0.95  # quotes that aren't in the issue mean the model is paraphrasing or inventing
+
+ceilings:
+  refusal_rate: 0.02   # refusals carry no area, so they drop out of the digest's rankings
+  failure_rate: 0.02   # runs with no usable output at all
+
+beat_baseline:
+  margin: 0.10         # the model must beat keyword rules by this much to justify its cost
+  metrics: [kind_acc, area_acc]
+
+regression:            # compared against evals/accepted.json when its split matches
+  tolerance: 0.04
+  metrics: [kind_acc, area_acc, severity_acc, blocked_recall]
+  max_cost_increase: 0.25   # fail if $/issue rises more than 25% over the accepted run

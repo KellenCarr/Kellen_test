@@ -69,6 +69,20 @@ class GitHub:
                     yield item
             url, params = r.links.get("next", {}).get("url"), None  # next link already carries the query
 
+    def get_issue(self, repo: str, number: int) -> dict:
+        return self._get(f"/repos/{repo}/issues/{number}").json()
+
+    def iter_labeled_issues(self, repo: str, label: str, state: str = "open") -> Iterator[dict]:
+        """Issues (not PRs) carrying `label`: used to pull reader flags from Loop's own repo."""
+        params = {"state": state, "labels": label, "per_page": 100}
+        url: str | None = f"/repos/{repo}/issues"
+        while url:
+            r = self._get(url, params=params)
+            for item in r.json():
+                if "pull_request" not in item:
+                    yield item
+            url, params = r.links.get("next", {}).get("url"), None
+
     def get_file(self, repo: str, path: str, ref: str | None = None) -> str:
         r = self._get(f"/repos/{repo}/contents/{path}", params={"ref": ref} if ref else None,
                       headers={"Accept": "application/vnd.github.raw+json"})

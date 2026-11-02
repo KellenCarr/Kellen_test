@@ -78,6 +78,22 @@ def issues_to_triage(conn, repo: str, since: datetime, prompt_version: str, mode
     return [dict(zip(cols, r, strict=True)) for r in rows.fetchall()]
 
 
+def prune_bodies(conn, repo: str, before: datetime) -> int:
+    """Drop the body text of issues created before `before` whose current content is already triaged.
+
+    The database is carried between scheduled runs as a build artifact; pruning keeps that copy free of old issue
+    text. Titles, hashes, cohorts and triage rows stay, so edit detection (content_sha) and the digest still work.
+    An issue edited later is re-fetched with its new body on the next ingest and re-triaged as usual.
+    """
+    sql_where = """
+        WHERE i.repo = ? AND i.created_at < ? AND i.body IS NOT NULL
+          AND EXISTS (SELECT 1 FROM triage t WHERE t.repo = i.repo AND t.number = i.number
+                      AND t.content_sha = i.content_sha)"""
+    n = conn.execute(f"SELECT count(*) FROM issue i {sql_where}", [repo, before]).fetchone()[0]
+    conn.execute(f"UPDATE issue i SET body = NULL {sql_where}", [repo, before])
+    return n
+
+
 _KEYED = {"triage": "INSERT OR REPLACE", "cluster": "INSERT OR REPLACE", "llm_call": "INSERT"}
 
 

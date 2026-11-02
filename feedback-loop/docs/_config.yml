@@ -1,0 +1,4 @@
+title: Loop
+description: A weekly digest of the public Claude Code issue tracker, triaged by Claude and checked in code.
+exclude:
+  - "*.sh"

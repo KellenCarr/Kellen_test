@@ -3,6 +3,7 @@ what shipped, and pipeline health. Shows Claude's normalized asks and issue link
 
 from collections import Counter, defaultdict
 from datetime import UTC, date, datetime, timedelta
+from urllib.parse import urlencode
 
 from loop import store
 from loop.cluster import cluster_items
@@ -21,7 +22,7 @@ def _latest_triage(conn, repo: str, start: datetime, end: datetime) -> list[dict
     rows = conn.execute(
         """
         SELECT i.number, i.html_url, i.reactions, i.comments, c.platform, c.os,
-               t.kind, t.area, t.ask, t.blocked, t.severity, t.status, t.review_reason
+               t.kind, t.area, t.proposed_area, t.ask, t.blocked, t.severity, t.status, t.review_reason
         FROM issue i
         JOIN cohort c USING (repo, number)
         JOIN triage t ON t.repo = i.repo AND t.number = i.number AND t.content_sha = i.content_sha
@@ -41,13 +42,21 @@ def _links(rows: list[dict], n: int = 5) -> str:
     return ", ".join(f"[#{r['number']}]({r['html_url']})" for r in shown) + more
 
 
+def flag_link(feedback_repo: str | None, window_end: date, item: str) -> str:
+    """A link that opens Loop's "wrong item" issue form with the digest week and row filled in."""
+    if not feedback_repo:
+        return ""
+    q = urlencode({"template": "wrong-item.yml", "digest": str(window_end), "item": item[:200]})
+    return f" [flag](https://github.com/{feedback_repo}/issues/new?{q})"
+
+
 def _mix(rows: list[dict], key: str) -> str:
     counts = Counter(r[key] for r in rows if r[key] not in ("unknown", None))
     return ", ".join(f"{k} {v}" for k, v in counts.most_common(3)) or "-"
 
 
 def build_digest(conn, repo: str, window_end: date, *, days: int = 7, client=None, effort: str = "low",
-                 run_id: str = "digest") -> str:
+                 run_id: str = "digest", feedback_repo: str | None = None) -> str:
     end = datetime.combine(window_end, datetime.min.time(), tzinfo=UTC)
     start = end - timedelta(days=days)
     all_rows = _latest_triage(conn, repo, start, end)
@@ -56,7 +65,8 @@ def build_digest(conn, repo: str, window_end: date, *, days: int = 7, client=Non
     out = [f"# Loop digest: {repo}", "",
            f"Issues opened {start:%Y-%m-%d} to {end - timedelta(days=1):%Y-%m-%d}, filed by users (staff excluded). "
            "Ranking uses an impact proxy: 1 + reactions + 0.5 x comments per issue. "
-           "Items marked † are awaiting review.", ""]
+           "Items marked † are awaiting review."
+           + (" Use a row's flag link to report a wrong item." if feedback_repo else ""), ""]
 
     for grp, kinds in GROUPS.items():
         clusters = []
@@ -84,8 +94,9 @@ def build_digest(conn, repo: str, window_end: date, *, days: int = 7, client=Non
                 "|---|---|---|---|---|---|---|"]
         for i, (score, label, area, members) in enumerate(clusters[:TOP_N], 1):
             flag = " †" if any(m["status"] != "auto" for m in members) else ""
+            row_flag = flag_link(feedback_repo, window_end, label)
             out.append(f"| {i} | {label}{flag} | {area} | {len(members)} | {score:.0f} | "
-                       f"{_mix(members, 'platform')} | {_links(members)} |")
+                       f"{_mix(members, 'platform')} | {_links(members)}{row_flag} |")
         if not clusters:
             out.append("| - | Nothing this window | | | | | |")
         out.append("")
@@ -99,7 +110,8 @@ def build_digest(conn, repo: str, window_end: date, *, days: int = 7, client=Non
     for (area, platform, os_), members in sorted(blocked.items(), key=lambda kv: -len(kv[1]))[:TOP_N]:
         asks = "; ".join(a for a, _ in Counter(m["ask"] for m in members).most_common(2))
         flag = " †" if any(m["status"] != "auto" for m in members) else ""
-        out.append(f"| {area} | {platform} | {os_} | {len(members)} | {asks}{flag} | {_links(members, 3)} |")
+        row_flag = flag_link(feedback_repo, window_end, f"blocked: {area} / {platform} / {os_}")
+        out.append(f"| {area} | {platform} | {os_} | {len(members)} | {asks}{flag} | {_links(members, 3)}{row_flag} |")
     if not blocked:
         out.append("| - | | | 0 | Nobody reported blocked | |")
     out.append("")
@@ -127,12 +139,23 @@ def build_digest(conn, repo: str, window_end: date, *, days: int = 7, client=Non
     out.append("")
 
     total, auto = len(all_rows), sum(r["status"] == "auto" for r in all_rows)
+    opened = conn.execute(
+        "SELECT count(*) FROM issue WHERE repo = ? AND created_at >= ? AND created_at < ? "
+        "AND NOT list_contains(?, coalesce(author_association, ''))",
+        [repo, start, end, list(store.STAFF)]).fetchone()[0]
     reasons = Counter(r["review_reason"] for r in all_rows if r["status"] != "auto")
     cost = conn.execute(
         "SELECT coalesce(sum(cost_usd), 0), count(*) FROM llm_call WHERE purpose = 'triage' "
         "AND list_contains(?, subject)", [[str(r["number"]) for r in all_rows]]).fetchone()
+    unfit = [r for r in all_rows if r["area"] in ("other", "new") or r["review_reason"] in ("new_area", "unknown_area")]
+    proposed = Counter(r["proposed_area"] for r in all_rows if r["proposed_area"])
+    per_issue = f" (${cost[0] / cost[1]:.3f} per call)" if cost[1] else ""
     out += ["## Pipeline health", "",
-            f"- Triaged issues in window: {total} ({auto} auto, {total - auto} awaiting review)",
+            f"- User-filed issues opened in window: {opened}; triaged: {total} ({auto} auto, {total - auto} awaiting "
+            f"review)" + (f"; **not triaged: {opened - total}** (budget stop or API errors)" if opened > total else ""),
             "- Review reasons: " + (", ".join(f"{k} {v}" for k, v in reasons.most_common()) or "none"),
-            f"- Triage spend for these issues: ${cost[0]:.2f} over {cost[1]} calls", ""]
+            f"- Triage spend for these issues: ${cost[0]:.2f} over {cost[1]} calls{per_issue}",
+            f"- Taxonomy fit: {len(unfit)} of {total} issues fit no existing area"
+            + (f" ({len(unfit) / total:.0%})" if total else "")
+            + ("; proposed: " + ", ".join(f"{k} {v}" for k, v in proposed.most_common(5)) if proposed else ""), ""]
     return "\n".join(out)

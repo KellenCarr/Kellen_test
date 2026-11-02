@@ -1,0 +1,36 @@
+name: feedback-loop heartbeat
+
+# Fails when the weekly run hasn't succeeded in 8 days, so a broken or silently disabled schedule gets noticed.
+# GitHub emails a failed scheduled run to whoever last edited this file's cron line; turn on Actions
+# notifications in the GitHub mobile app to get it on your phone.
+
+on:
+  schedule:
+    - cron: "41 16 * * *"  # daily 16:41 UTC
+  workflow_dispatch:
+
+permissions:
+  actions: read
+
+jobs:
+  check:
+    if: vars.LOOP_ENABLED == 'true' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Last successful weekly run is recent
+        run: |
+          last=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow feedback-loop-weekly.yml --status success \
+                   --limit 1 --json createdAt --jq '.[0].createdAt // empty')
+          if [ -z "$last" ]; then
+            echo "::error::No successful weekly run yet. Run 'feedback-loop weekly' by hand once after enabling it."
+            exit 1
+          fi
+          age=$(( ($(date -u +%s) - $(date -u -d "$last" +%s)) / 86400 ))
+          echo "Last successful weekly run: $last ($age days ago)"
+          if [ "$age" -gt 8 ]; then
+            echo "::error::The weekly run last succeeded $age days ago"
+            exit 1
+          fi

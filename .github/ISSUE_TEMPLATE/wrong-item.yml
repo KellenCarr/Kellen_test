@@ -1,0 +1,49 @@
+name: Wrong item in a Loop digest
+description: Report a digest row that's misclassified, mis-grouped or wrong. Reports become eval cases.
+title: "Wrong item: "
+labels: ["wrong-item"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks. Each report is reviewed by hand. Confirmed corrections are added to the eval set, so the same mistake gets caught before the next prompt change ships.
+  - type: input
+    id: digest
+    attributes:
+      label: Digest week
+      description: Filled in by the flag link.
+    validations:
+      required: true
+  - type: input
+    id: item
+    attributes:
+      label: Digest row
+      description: Filled in by the flag link.
+  - type: input
+    id: issue
+    attributes:
+      label: Issue number
+      description: The Claude Code issue that's wrong, e.g. 12345.
+    validations:
+      required: true
+  - type: dropdown
+    id: field
+    attributes:
+      label: What is wrong
+      options:
+        - Kind (bug, feature request, model behavior, docs, question)
+        - Area (which team owns the fix)
+        - Blocked (the user is or isn't actually blocked)
+        - Severity
+        - The ask doesn't match the issue
+        - Grouped with unrelated issues
+        - Something else
+    validations:
+      required: true
+  - type: input
+    id: correct
+    attributes:
+      label: What it should be
+      description: The correct value, or a short explanation.
+    validations:
+      required: true

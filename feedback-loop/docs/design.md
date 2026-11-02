@@ -60,8 +60,8 @@ It is built as a Product Ops system: the tool is one part, and the program aroun
 
 | Week | Build | Done when |
 |---|---|---|
-| 1 | Ingest, cohorts, taxonomy seed, triage with checks, clustering, digest | Code and tests done; first live digest (needs API keys) reviewed by hand |
-| 2 | Label 150 issues (`evals/labels.jsonl`, codebook); `run_eval.py` with 3 repeats; keyword-rule baseline; effort sweep (low/medium) | Eval table: kind accuracy, area accuracy, blocked recall (gate), evidence validity, $/issue |
+| 1 | Ingest, cohorts, taxonomy seed, triage with checks, clustering, digest | Code and tests done ✓; first live digest (needs API keys) reviewed by hand |
+| 2 | Eval harness ✓ (`loop eval`, 3 repeats, rules baseline, CI gate, frozen-set hash, codebook); scheduled run, Pages publish, heartbeat, reader flags and review queue ✓. Still to do: label 150 issues, measure the noise floor, effort sweep (low/medium) | Eval table: kind accuracy, area accuracy, blocked recall (gate), evidence validity, $/issue; first unattended digest published |
 | 3 | Close the loop: match changelog entries to clusters with a quote check on both sides, plus drafted replies; a model-launch lookback (the 2026-10-21 sampling-parameter removal, or the next model launch) | Precision gate on "fixed by" matches (a false "fixed" is the costly error) |
 | 4 | Package as a Claude Code skill; EAP brief (the question first, scaffolding, success criteria); recruit 5–8 testers | EAP opens |
 | 6 | EAP retro and v2 | Retro published, with what changed because of it |
