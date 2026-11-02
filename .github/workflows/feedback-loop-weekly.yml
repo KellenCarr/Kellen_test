@@ -1,0 +1,131 @@
+name: feedback-loop weekly
+
+# Ingest -> triage -> digest -> publish, every Monday. Off until the repo variable LOOP_ENABLED is "true";
+# a manual run (workflow_dispatch) always runs. Setup: feedback-loop/README.md#operate-it
+
+on:
+  schedule:
+    - cron: "23 15 * * 1"  # Mondays 15:23 UTC
+  workflow_dispatch:
+    inputs:
+      max_cost:
+        description: "Triage budget in USD (blank = LOOP_MAX_COST or 5)"
+        required: false
+        default: ""
+
+permissions:
+  contents: write  # commit the published digest (the archive, and keeps the repo active for the scheduler)
+  actions: read    # find and download the previous run's database
+  pages: write     # deploy the site
+  id-token: write  # required by actions/deploy-pages
+
+concurrency:
+  group: feedback-loop-weekly
+  cancel-in-progress: false
+
+jobs:
+  run:
+    if: vars.LOOP_ENABLED == 'true' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    defaults:
+      run:
+        working-directory: feedback-loop
+    env:
+      REPO: ${{ vars.LOOP_SOURCE_REPO || 'anthropics/claude-code' }}
+      SITE_URL: ${{ vars.LOOP_SITE_URL }}
+      LOOP_FEEDBACK_REPO: ${{ vars.LOOP_FEEDBACK_REPO || github.repository }}
+      MAX_COST: ${{ inputs.max_cost || vars.LOOP_MAX_COST || '5' }}
+      GITHUB_TOKEN: ${{ github.token }}
+      GH_TOKEN: ${{ github.token }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check configuration
+        run: |
+          missing=""
+          [ -n "$ANTHROPIC_API_KEY" ] || missing="$missing secret ANTHROPIC_API_KEY;"
+          [ -n "$SITE_URL" ] || missing="$missing variable LOOP_SITE_URL;"
+          if [ -n "$missing" ]; then
+            echo "::error::Not configured:$missing see feedback-loop/README.md#operate-it"
+            exit 1
+          fi
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+      - run: uv venv .venv && uv pip install --python .venv/bin/python -e .
+
+      - name: Restore the database from the last successful run
+        run: |
+          prev=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow feedback-loop-weekly.yml --status success \
+                   --limit 1 --json databaseId --jq '.[0].databaseId // empty')
+          if [ -z "$prev" ]; then
+            echo "No earlier successful run: starting with an empty database"
+            exit 0
+          fi
+          if ! gh run download "$prev" --repo "$GITHUB_REPOSITORY" --name loop-db --dir data; then
+            echo "::warning::Could not download the database from run $prev (expired after 90 days?). Starting fresh: only the last 7 days are ingested."
+          fi
+
+      - name: Set the window
+        run: |
+          echo "WEEK_ENDING=$(date -u +%F)" >> "$GITHUB_ENV"
+          echo "SINCE=$(date -u -d '7 days ago' +%F)" >> "$GITHUB_ENV"
+
+      - name: Ingest
+        run: .venv/bin/loop ingest --repo "$REPO"
+
+      - name: Triage
+        run: .venv/bin/loop triage --repo "$REPO" --since "$SINCE" --max-cost "$MAX_COST"
+
+      - name: Digest
+        run: .venv/bin/loop digest --repo "$REPO" --week-ending "$WEEK_ENDING"
+
+      - name: Publish
+        run: |
+          .venv/bin/loop publish --digest "out/digest-${REPO//\//-}-$WEEK_ENDING.md" \
+            --week-ending "$WEEK_ENDING" --site docs --site-url "$SITE_URL"
+
+      - name: Prune old issue text before saving the database
+        run: .venv/bin/loop prune --repo "$REPO" --keep-days 14
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: loop-db
+          path: feedback-loop/data/loop.duckdb
+          retention-days: 90
+          if-no-files-found: error
+
+      - name: Commit the digest
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/digests docs/index.md docs/feed.xml
+          if git diff --cached --quiet; then
+            echo "Nothing new to publish"
+            exit 0
+          fi
+          git commit -m "Publish Loop digest for the week ending $WEEK_ENDING"
+          git push
+
+      # Pages source must be "GitHub Actions" (Settings > Pages). Deploying here, rather than relying on a push to
+      # trigger a branch build, makes a failed publish fail this run, which the heartbeat then reports.
+      - uses: actions/configure-pages@v5
+      - uses: actions/jekyll-build-pages@v1
+        with:
+          source: ./feedback-loop/docs
+          destination: ./_site
+      - uses: actions/upload-pages-artifact@v3
+      - id: deploy
+        uses: actions/deploy-pages@v4
+
+      - name: Pipeline health
+        if: always()
+        run: |
+          f="out/digest-${REPO//\//-}-${WEEK_ENDING:-none}.md"
+          if [ -f "$f" ]; then sed -n '/## Pipeline health/,$p' "$f" >> "$GITHUB_STEP_SUMMARY"; fi

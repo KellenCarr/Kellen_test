@@ -1,0 +1,78 @@
+name: feedback-loop eval gate
+
+# Runs the frozen eval on any change that can move triage quality. The gate turns on by itself once the frozen
+# set has `min_cases` labeled cases (evals/gate.yaml); until then it only validates the labels.
+
+on:
+  pull_request:
+    paths:
+      - "feedback-loop/src/loop/prompts/**"
+      - "feedback-loop/src/loop/triage.py"
+      - "feedback-loop/src/loop/llm.py"
+      - "feedback-loop/src/loop/issue_form.py"
+      - "feedback-loop/config/taxonomy.yaml"
+      - "feedback-loop/evals/**"
+      - ".github/workflows/feedback-loop-eval.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: feedback-loop
+    env:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      GITHUB_TOKEN: ${{ github.token }}
+      REPO: ${{ vars.LOOP_SOURCE_REPO || 'anthropics/claude-code' }}
+      EVAL_MAX_COST: ${{ vars.LOOP_EVAL_MAX_COST || '10' }}
+      FROM_FORK: ${{ github.event.pull_request.head.repo.fork || false }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+      - run: uv venv .venv && uv pip install --python .venv/bin/python -e .
+
+      - name: Validate labels and the frozen-set hash
+        run: .venv/bin/loop labels-check
+
+      - name: Is the gate active?
+        id: active
+        run: |
+          n=$(.venv/bin/python -c "from pathlib import Path; from loop import labels; from loop.triage import Taxonomy; rows = labels.load(labels.DEFAULT_LABELS, set(Taxonomy.load().areas)); print(labels.check(rows, labels.DEFAULT_FROZEN_HASH).labeled['frozen'])")
+          min=$(.venv/bin/python -c "import yaml; print(yaml.safe_load(open('evals/gate.yaml'))['min_cases'])")
+          if [ "$n" -lt "$min" ]; then
+            echo "::notice::Eval gate not active yet: $n labeled frozen cases, it needs $min"
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ -z "$ANTHROPIC_API_KEY" ]; then
+            if [ "$FROM_FORK" = "true" ]; then
+              echo "::warning::Pull request from a fork has no API key; a maintainer must run the eval"
+              echo "run=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            echo "::error::The eval gate is active but the ANTHROPIC_API_KEY secret is not set"
+            exit 1
+          fi
+          echo "run=true" >> "$GITHUB_OUTPUT"
+
+      - name: Run the frozen eval
+        if: steps.active.outputs.run == 'true'
+        run: .venv/bin/loop eval --repo "$REPO" --split frozen --repeats 3 --max-cost "$EVAL_MAX_COST" --gate-enforce
+
+      - name: Report
+        if: always() && steps.active.outputs.run == 'true'
+        run: if [ -f out/eval/eval-report.md ]; then cat out/eval/eval-report.md >> "$GITHUB_STEP_SUMMARY"; fi
+
+      - uses: actions/upload-artifact@v4
+        if: always() && steps.active.outputs.run == 'true'
+        with:
+          name: eval-report
+          path: feedback-loop/out/eval/
+          if-no-files-found: ignore

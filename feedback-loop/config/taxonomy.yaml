@@ -1,0 +1,46 @@
+# Product areas Claude assigns each issue to. Hand-curated seed; Claude proposes new areas
+# (area: "new") and you promote them here after review. Keep ids stable: digests and evals key on them.
+version: 1
+areas:
+  - id: tui
+    covers: Interactive terminal UI - rendering, input, keybindings, scrolling, themes, status line, copy/paste
+  - id: permissions_sandbox
+    covers: Permission prompts and rules, auto mode, sandboxing, trust, working-directory boundaries
+  - id: hooks
+    covers: Hooks configuration and behavior
+  - id: mcp
+    covers: MCP servers, MCP tools, elicitation, MCP auth and config
+  - id: plugins_skills
+    covers: Plugins, skills, slash commands, marketplaces, mods
+  - id: subagents
+    covers: Subagents, agent teams, background tasks, monitors
+  - id: context_memory
+    covers: Context window, compaction, CLAUDE.md, memory, resume, session history
+  - id: builtin_tools
+    covers: Built-in tools - Bash, Read/Edit/Write, search, web fetch/search, images, PDFs
+  - id: git_github
+    covers: Git operations, worktrees, GitHub integration and Actions
+  - id: ide_vscode
+    covers: VS Code (and forks such as Cursor) extension
+  - id: ide_jetbrains
+    covers: JetBrains plugin
+  - id: desktop_web_cloud
+    covers: Desktop app, Claude Code on the web, cloud sessions, Remote Control
+  - id: integrations
+    covers: Claude Tag (Slack), Code Review, other first-party integrations
+  - id: sdk_headless
+    covers: Agent SDK, print mode (-p), CI and non-interactive use
+  - id: auth_limits
+    covers: Login, accounts, organizations, plans, usage limits, rate limits, billing
+  - id: model_behavior
+    covers: Model quality - instruction following, unwanted edits, refusals, behavior changes across versions
+  - id: third_party_platforms
+    covers: Behavior specific to Bedrock, Vertex, Foundry, gateways and proxies
+  - id: install_update
+    covers: Installation, auto-update, startup, configuration files
+  - id: performance
+    covers: Speed, memory use, crashes, hangs, high CPU
+  - id: docs
+    covers: Documentation gaps or errors
+  - id: other
+    covers: Anything that fits no area above
