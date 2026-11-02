@@ -1,6 +1,6 @@
 """DuckDB storage. All SQL is parameterized; all writes are upserts on natural keys."""
 
-from datetime import datetime
+from datetime import UTC, datetime
 from importlib.resources import files
 from pathlib import Path
 
@@ -53,6 +53,16 @@ def upsert_changelog(conn, repo: str, entries: list[ChangelogEntry]) -> None:
 def upsert_releases(conn, repo: str, releases: dict[str, datetime]) -> None:
     conn.executemany("INSERT OR REPLACE INTO release VALUES (?, ?, ?)",
                      [[repo, v, t] for v, t in releases.items()])
+
+
+def last_updated(conn, repo: str) -> datetime | None:
+    """Latest issue update stored for `repo`, as an aware UTC datetime; None when nothing is stored.
+
+    Read as epoch seconds: DuckDB returns TIMESTAMPTZ values to Python only when pytz is installed, and it
+    isn't a dependency. Selecting the column directly crashes the second scheduled run (the first incremental one).
+    """
+    epoch = conn.execute("SELECT epoch(max(updated_at)) FROM issue WHERE repo = ?", [repo]).fetchone()[0]
+    return None if epoch is None else datetime.fromtimestamp(epoch, tz=UTC)
 
 
 def issues_to_triage(conn, repo: str, since: datetime, prompt_version: str, model: str, effort: str,

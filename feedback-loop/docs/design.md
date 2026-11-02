@@ -1,3 +1,7 @@
+---
+title: "Loop: design"
+---
+
 # Loop: design
 
 Loop answers two questions every week from a product's public issue tracker, with no manual reporting:

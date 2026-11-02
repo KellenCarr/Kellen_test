@@ -19,7 +19,10 @@ ceilings:
 
 beat_baseline:
   margin: 0.10         # the model must beat keyword rules by this much to justify its cost
-  metrics: [kind_acc, area_acc]
+  # Area only. Kind comes almost free from the issue form the reporter picked, and the rules baseline reads it,
+  # so on form-filed issues the baseline scores near 100% and no model can beat it by the margin. Requiring
+  # that blocks every change. Kind regressions are still caught against accepted.json (regression.metrics).
+  metrics: [area_acc]
 
 regression:            # compared against evals/accepted.json when its split matches
   tolerance: 0.04

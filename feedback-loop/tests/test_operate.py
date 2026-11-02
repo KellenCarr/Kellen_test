@@ -132,3 +132,12 @@ def test_labels_check_cli_fails_on_unrecorded_frozen_change(tmp_path):
     lp.write_text(json.dumps({**labeled(1), "severity": "high"}) + "\n")
     with pytest.raises(SystemExit, match="frozen labels changed"):
         main(args)
+
+
+def test_last_updated_needs_no_pytz(conn):
+    """Regression: selecting a TIMESTAMPTZ needs pytz (not installed), which crashed incremental ingest."""
+    import importlib.util
+
+    assert importlib.util.find_spec("pytz") is None  # keep this test honest about the environment
+    assert store.last_updated(conn, REPO) == datetime(2026, 10, 20, 10, 0, tzinfo=UTC)
+    assert store.last_updated(conn, "nobody/nothing") is None

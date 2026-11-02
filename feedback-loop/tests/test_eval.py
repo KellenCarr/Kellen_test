@@ -161,3 +161,9 @@ def test_labels_loader_rejects_bad_rows(tmp_path):
     p.write_text(json.dumps(good) + "\n" + json.dumps(good) + "\n")
     with pytest.raises(labels.LabelError, match="labeled twice"):
         labels.load(p, areas)
+
+
+def test_gate_does_not_require_beating_the_form_on_kind():
+    # The rules baseline reads kind from the issue form, so it can score ~100% there; only area must beat it.
+    assert evaluate.gate({**GOOD, "kind_acc": 0.95}, {**BASE, "kind_acc": 1.0}, GATE, complete=True, accepted=None,
+                         split="frozen") == []

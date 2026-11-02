@@ -20,8 +20,7 @@ def _date(s: str) -> datetime:
 def cmd_ingest(args) -> None:
     conn = store.connect(args.db)
     gh = GitHub(token=os.environ.get("GITHUB_TOKEN"))
-    since = _date(args.since) if args.since else conn.execute(
-        "SELECT max(updated_at) FROM issue WHERE repo = ?", [args.repo]).fetchone()[0]
+    since = _date(args.since) if args.since else store.last_updated(conn, args.repo)
     since = since or datetime.now(UTC) - timedelta(days=7)
     now, n = datetime.now(UTC), 0
     for item in gh.iter_issues(args.repo, since=since):
